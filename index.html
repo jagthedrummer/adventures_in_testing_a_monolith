@@ -4,7 +4,7 @@
 	<head>
 		<meta charset="utf-8">
 
-		<title>Side Projects - A Round Table</title>
+		<title>Adventures in Testing a Monolith</title>
 
 		<meta name="description" content="">
 		<meta name="author" content="Okc Ruby">
@@ -31,7 +31,9 @@
 				document.getElementsByTagName( 'head' )[0].appendChild( link );
 			}
 		</script>
-
+    <style type="text/css" media="all">
+      body{ background: white; }
+    </style>
 		<!--[if lt IE 9]>
 		<script src="lib/js/html5shiv.js"></script>
 		<![endif]-->
@@ -44,57 +46,415 @@
 			<!-- Any section element inside of this container is displayed as a slide -->
 			<div class="slides">
 				<section>
-          <h1 class="smaller">Side Projects:<br/><br/>A Round Table</h1><br/>
-          <img src="okcruby.png" class="no-border"/>
+          <h1 class="smaller">Adventures in Testing a Monolith</h1><br/>
+          <p class="fragment">OR</p>
+          <br/>
+          <h2 class="fragment">How we sped up our test suite by around 66%</h2>
 				</section>
 
         <section>
-          <h2>Any sufficiently advanced technology is very probably wrong.</h2>
-          <h3>GenMacArthurC.Clarke (@GenMcArtCClarke)</h3>
-        </section>
-        <section>
-          <h1>What side projects are you working on?</h1>
-        </section>
-        
-        <section>
-          <h1>Why are you working on them?</h1>
-          <h2>Are you using them to learn new things or to apply things that you learn at your job?</h2>
-        </section>
-
-        <section>
-          <h1>What do you hope becomes of your side project?</h1>
-        </section>
-
-        <section>
-          <h1>When is it time to stop working on a side project?</h1>
-          <h2>When is it time to spend more time on a side project?</h2>
-        </section>
-        
-        <section>
-          <h1>How many side projects is too many?</h1>
-        </section>
-
-        <section>
-          <h1>How do you stay motivated?</h1>
-        </section>
-
-        <section>
-          <h1>What do you enjoy about your side project that you wish your 9-5 would adopt?</h1>
-        </section>
-
-        <section>
-          <h1>How could employers encourage side projects?</h1>
-        </section>
-
-        <section>
-          <h1>Could your side project benefit your employer?</h1>
-        </section>
-
-
-        <section>
-					<h1 class="smaller">Thanks for the discussion!</h1>
-          <img src="okcruby.png" class="no-border"/>
+          <h2 class="smaller">Thanks to Techlahoma<br/>for Sponsoring</h2>
+          <img src="bson.png" class="no-border"/>
+          <a href="http://www.techlahoma.org">www.techlahoma.org</a>
 				</section>
+
+        <section>
+          <h1>Our story begins</h1>
+        </section>
+
+
+        <section>
+          <pre><code>
+  $ rspec
+  ...
+  Finished in 29 minutes 34 seconds (files took 25.27 seconds to load)
+  3501 examples, 0 failures, 2 pending
+          </code></pre>
+
+          <div class="fragment">
+          <pre><code>
+  $ rspec
+  ...
+  Finished in 43 minutes 21 seconds (files took 24.14 seconds to load)
+  3501 examples, 6 failures, 2 pending
+          </code></pre>
+          </div>
+
+          <div class="fragment">
+          <pre><code>
+  $ rspec
+  ...
+  Finished in 55 minutes 13 seconds (files took 24.55 seconds to load)
+  3501 examples, 17 failures, 2 pending
+          </code></pre>
+          </div>
+
+        </section>
+
+
+        
+
+        <section>
+          <img src="GithubStatus.png"/>
+        </section>
+
+        <section>
+          <img src="ddos-outage-map.png"/>
+        </section>
+
+
+
+        <section>
+          <h2>Realization:</h2><br/>
+          <h2 class="fragment">We're making network requests during test runs.</h2>
+          <div class="fragment">
+            <img src="scared_emoji.png" class="no-border fit" style="max-height:400px;"/>
+          </div>
+        </section>
+
+        <section>
+          <h2>Aren't we preventing that with webmock?</h2>
+          <br/>
+          <div class="fragment">
+          <pre><code class="ruby">
+  # Gemfile
+
+  group :test do
+    gem 'vcr', '~> 3.0', '>= 3.0.1'
+    gem 'webmock', '~> 2.1'
+  end
+          </code></pre>
+          </div>
+          <div class='fragment'>
+          <pre><code class="ruby">
+  # spec/rails_helper.rb
+  require 'webmock/rspec'
+  WebMock.disable_net_connect!({
+    allow_localhost: true,
+    allow: [/codeclimate.com/]
+  })
+          </code></pre>
+          </div>
+        </section>
+
+        <section>
+          <h2>The Culprit:</h2>
+          <h2>Misconfiguration of VCR</h2><br/>
+          <div class="fragment">
+          <pre><code class="ruby">
+
+  VCR.configure do |config|
+    ...
+    config.allow_http_connections_when_no_cassette = true
+    ...
+  end
+          </code></pre>
+          <h3>^ This is bad. Don't do this.</h3>
+          </div>
+        </section>
+
+        <section>
+          <h2>The Fix:</h2>
+          <h2>Proper Configuration of VCR</h2><br/>
+          <pre><code class="ruby">
+
+  VCR.configure do |config|
+    ...
+    config.allow_http_connections_when_no_cassette = false
+    ...
+  end
+          </code></pre>
+          <h3>^ This is good. Do this. *</h3><br/>
+          <p>* Doing this will break tests that are making network requests.</p>
+        </section>
+
+        <section>
+          <h2>Broken Tests</h2>
+          <pre><code>
+  VCR::Errors::UnhandledHTTPRequestError:
+     
+  ===================================================================
+  An HTTP request has been made that VCR does not know how to handle:
+    POST https://z181x6cubl.execute-api.us-east-1.amazonaws.com/...
+
+  ...
+  ===================================================================
+  # ./lib/serverless.rb:12:in `response_for'
+  # ./lib/serverless.rb:30:in `post'
+  # ./lib/gilbert.rb:11:in `create'
+  # ./spec/lib/gilbert_spec.rb:5:in `block (2 levels) in ...'
+  # ./spec/lib/gilbert_spec.rb:6:in `block (2 levels) in ...'
+  # ./spec/lib/gilbert_spec.rb:10:in `block (2 levels) in ...'
+
+          </code></pre>
+        </section>
+
+        <section>
+          <h2>Fixing broken tests:</h2>
+          <br/>
+          <ul>
+            <li>Wrap tests that generate network requests in a <code>VCR.use_cassette</code> block</li><br/>
+            <li>Disable non-essential code paths that generate network requets</li>
+          </ul>
+        </section>
+
+
+        <section>
+          <h2><code>VCR.use_cassette</code></h2>
+          <pre><code class="ruby">
+    proposal = Gilbert.proposal(uuid)
+    expect(proposal.uuid).to eq(uuid)
+    # ...
+          </code></pre>
+          <div class="fragment">
+          <pre><code class="ruby">
+  VCR.use_cassette('Gilbert.proposal') do
+    proposal = Gilbert.proposal(uuid)
+    expect(proposal.uuid).to eq(uuid)
+    # ...
+  end
+          </code></pre>
+          </div>
+        </section>
+
+        <section>
+          <h3>Disable non-essential code paths</h3>
+          <br/>
+          <pre><code class="ruby">
+  allow_any_instance_of(User).to receive(:queue_after_creates).
+    and_return(true)
+          </code></pre>
+          <div class="fragment">
+          <br/>
+          <h3>Re-enable a code path</h3><br/>
+          <pre><code class="ruby">
+  allow_any_instance_of(User).to receive(:queue_after_creates).
+    and_call_original
+          </code></pre>
+          </div>
+        </section>
+
+        <section>
+          <h2>Finding Slow Tests</h2>
+
+          <br/>
+
+          <div class="fragment">
+          <h3>First Approach:</h3>
+          <pre><code>
+  $ rspec --profile
+          </code></pre>
+          </div>
+
+          <div class="fragment">
+            <br/>
+            <h3>Better Approach:</h3>
+            <h3>Look at coverage data</h3>
+          </div>
+        </section>
+
+        <section>
+          <img src="coverage.png"/>
+        </section>
+
+        <section>
+          <img src="coverage-sorted.png"/>
+        </section>
+
+        <section>
+          <h2>Realization:</h2><br/>
+          <h2 class="fragment">We have lots of callbacks running.</h2><br/>
+          <h2 class="fragment">We create unnecessarily deep object graphs.</h2>
+        </section>
+
+        <section>
+          <h3>Disabling callbacks</h3>
+          <br/>
+          <pre><code class="ruby">
+  allow_any_instance_of(User).to receive(:queue_after_creates).
+    and_return(true)
+          </code></pre>
+          <div class="fragment">
+          <br/>
+          <h3>Re-enable a code path</h3><br/>
+          <pre><code class="ruby">
+  allow_any_instance_of(User).to receive(:queue_after_creates).
+    and_call_original
+          </code></pre>
+          </div>
+        </section>
+
+        <section>
+          <pre><code>
+  # spec/rails_helper.rb
+  config.before(:each) do |example|
+    allow_any_instance_of(User).to receive(:queue_after_creates).and_return(true)
+    allow_any_instance_of(User).to receive(:queue_after_commits).and_return(true)
+    allow_any_instance_of(Contact).to receive(:sync_contact_profile).and_return(nil)
+    allow_any_instance_of(ContactProfile).to receive(:queue_check_for_smart_list_matches).and_return(nil)
+    allow_any_instance_of(ContactProfile).to receive(:queue_set_action_score).and_return(nil)
+    allow_any_instance_of(Page).to receive(:touch_pages).and_return(nil)
+    allow_any_instance_of(Page).to receive(:clear_caches).and_return(nil)
+    allow_any_instance_of(Funnel).to receive(:track).and_return(nil)
+    allow_any_instance_of(Purchase).to receive(:queue_check_for_smart_list_matches).and_return(nil)
+    allow_any_instance_of(Purchase).to receive(:set_original_amount).and_return(nil)
+    allow_any_instance_of(Purchase).to receive(:deliver_created_webhooks).and_return(nil)
+    allow_any_instance_of(Purchase).to receive(:deliver_updated_webhooks).and_return(nil)
+    allow_any_instance_of(Purchase).to receive(:deliver_destroyed_webhooks).and_return(nil)
+  end
+          </code></pre>
+        </section>
+
+        <section>
+          <h3>Deep object graphs</h3>
+          <pre><code class="ruby">
+  class Funnel
+    has_many :funnel_steps
+  end
+
+  class FunnelStep
+    belongs_to :funnel
+    has_many :pages
+  end
+
+  class Page
+    belongs_to :funnel_step
+    has_many :contacts
+  end
+
+  class Contact
+    belongs_to :page
+  end
+          </code></pre>
+        </section>
+
+        <section>
+          <pre><code class="ruby">
+  factory :funnel do
+    title 'Test Funnel'
+  end
+
+  factory :funnel_step do
+    funnel
+  end
+
+  factory :page do
+    funnel_step
+  end
+
+  factory :contact do
+    page
+  end
+          </code></pre>
+          <h3>^ This is bad. Don't do this.</h3>
+        </section>
+
+        <section>
+          <pre><code class="ruby">
+  def create_contact_with_funnel
+    funnel = Funnel.create! ...
+    funnel_step = FunnelStep.create! ...
+    page = Page.create! ...
+    contact = Contact.create! ...
+    return contact
+  end
+          </code></pre>
+          <h3>^ This is bad. Don't do this.</h3>
+        </section>
+
+        <section>
+          <h2>Fixing the Factories</h2>
+          <br/><br/>
+          <h2>Use traits</h2>
+        </section>
+
+
+
+        <section>
+          <h3>Instead of this:</h3>
+          <pre><code class="ruby">
+  factory :contact do
+    page
+  end
+
+  # in a test
+  contact = create :contact
+          </code></pre>
+
+          <br/>
+          <div class="fragment">
+            <h3>Do this:</h3>
+          <pre><code class="ruby">
+  factory :contact do
+    trait :with_page do
+      page
+    end
+  end
+
+  # in a test
+  contact = create :contact, :with_page
+          </code></pre>
+          </div>
+        </section>
+
+
+        <section>
+          <h3>Misuse of Given/When/Then syntax</h3>
+        </section>
+
+        <section>
+          <pre><code class="ruby">
+  describe 'creating a contact with params' do
+    Given(:params){ name: 'John', email: 'john@doe.com', ... }
+
+    When(:contact){ create :contact, params }
+
+    Then{ expect(contact.name).to eq(params[:name]) }
+    Then{ expect(contact.email).to eq(params[:email]) }
+    Then{ ... }
+    Then{ ... }
+    Then{ ... }
+    Then{ ... }
+    Then{ ... }
+    Then{ ... }
+  end
+          </code></pre>
+        </section>
+
+        <section>
+          <h3>
+          The <code>Given</code> and <code>When</code> blocks are called for
+          EVERY instance of <code>Then</code>.
+          </h3>
+        </section>
+
+        <section>
+          <pre><code class="ruby">
+  describe 'creating a contact with params' do
+    Given(:params){ name: 'John', email: 'john@doe.com', ... }
+
+    When(:contact){ create :contact, params }
+
+    Then{ expect(contact.name).to eq(params[:name]) }
+    And { expect(contact.email).to eq(params[:email]) }
+    And { ... }
+    And { ... }
+    And { ... }
+    And { ... }
+    And { ... }
+    And { ... }
+  end
+          </code></pre>
+        </section>
+
+        <section>
+          <h2>parallel_tests</h2>
+        </section>
+
+        <section>
+          <h1>Thanks!</h1>
+          <p>Find these slides later to day at <a href="http://octolabs.com">OctoLabs.com</a></p>
+        </section>
 
 
 			</div>
